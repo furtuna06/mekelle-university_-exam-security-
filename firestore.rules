@@ -1,0 +1,130 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: students
+// Fields:
+//   - id: string (required) - University ID
+//   - name: string (required) - Full name
+//   - department: string - Academic department
+//   - role: string (enum: student, admin) - User role
+//   - descriptors: array (required) - Biometric data
+//   - registeredAt: timestamp - Creation time
+//
+// Collection: pending_registrations
+// Fields:
+//   - id: string (required)
+//   - name: string (required)
+//   - descriptors: array (required)
+//   - submittedAt: timestamp
+//
+// Collection: attendance_logs
+// Fields:
+//   - id: string (required)
+//   - name: string (required)
+//   - timestamp: timestamp
+//   - confidence: number
+//
+// Collection: audit_logs
+// Fields:
+//   - action: string (required)
+//   - details: string
+//   - timestamp: timestamp
+//
+// Collection: notifications
+// Fields:
+//   - title: string (required)
+//   - message: string (required)
+//   - targetId: string (required) - Student ID or 'all'
+//   - timestamp: timestamp
+//   - read: bool
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "hagezomfurtuna@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidString(field, maxLen) {
+      return request.resource.data[field] is string && request.resource.data[field].size() <= maxLen;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /students/{studentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /pending_registrations/{regId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /attendance_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    match /staff_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    match /recognition_attempts/{attemptId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isAdmin() || (isAuthenticated() && (request.auth.uid == resource.data.targetId || resource.data.targetId == 'all'));
+      allow write: if isAdmin();
+    }
+
+    match /config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isOwner(userId);
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

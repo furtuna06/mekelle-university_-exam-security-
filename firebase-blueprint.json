@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Registered student or staff member with biometric data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "University ID" },
+        "name": { "type": "string", "description": "Full name" },
+        "department": { "type": "string", "description": "Academic department" },
+        "role": { "type": "string", "enum": ["student", "admin"], "description": "User role" },
+        "descriptors": { "type": "array", "description": "Facial biometric descriptors" },
+        "registeredAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["approved", "pending"] }
+      },
+      "required": ["id", "name", "descriptors"]
+    },
+    "AttendanceLog": {
+      "title": "Attendance Log",
+      "description": "Record of a student entering a location",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "department": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "confidence": { "type": "number" }
+      },
+      "required": ["id", "name", "timestamp"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "System activity log for security auditing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User-specific or system-wide notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["success", "error", "warning", "info", "exam"] },
+        "targetId": { "type": "string", "description": "Student ID or 'all'" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["title", "message", "timestamp"]
+    },
+    "ExamSchedule": {
+      "title": "Exam Schedule",
+      "description": "Current active exam session details",
+      "type": "object",
+      "properties": {
+        "subject": { "type": "string" },
+        "location": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Collection of verified students and staff"
+    },
+    "/pending_registrations/{regId}": {
+      "schema": "Student",
+      "description": "Self-registrations awaiting admin approval"
+    },
+    "/attendance_logs/{logId}": {
+      "schema": "AttendanceLog",
+      "description": "Daily attendance and entry records"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System-wide activity audit trail"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "/config/exam_schedule": {
+      "schema": "ExamSchedule",
+      "description": "Global exam schedule configuration"
+    }
+  }
+}

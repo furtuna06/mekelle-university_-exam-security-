@@ -1,0 +1,5 @@
+{
+  "name": "Mekelle University: Exam Security System",
+  "description": "Official Mekelle University examination security and biometric verification system. Provides high-integrity student identification, automated attendance tracking, and secure exam entry control using advanced biometric processing.",
+  "requestFramePermissions": ["camera"]
+}
