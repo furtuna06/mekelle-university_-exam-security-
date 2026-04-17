@@ -1,17 +1,23 @@
+import 'dotenv/config';
 import mysql from 'mysql2/promise';
 import fs from 'fs';
 import path from 'path';
 
 async function setupDatabase() {
   const connection = await mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: 'kbraway1993',
-    database: 'faceguard'
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT) ||  15695,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    ssl: {
+    rejectUnauthorized: true, // Aiven ላይ ለ SSL ያስፈልጋል
+  }
   });
 
   try {
     console.log('Connected to MySQL...');
+    console.log("checking connection to:",process.env.DB_HOST);
 
     // Read init.sql
     const sqlPath = path.join(process.cwd(), 'init.sql');
