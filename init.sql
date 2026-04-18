@@ -74,3 +74,23 @@ CREATE TABLE IF NOT EXISTS recognition_attempts (
     distance FLOAT,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- የክፍሎች ዝርዝር
+CREATE TABLE IF NOT EXISTS exam_rooms (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    room_name VARCHAR(50) NOT NULL, -- ለምሳሌ: Room 101
+    capacity INT DEFAULT 24,       -- የክፍሉ አቅም
+    current_students INT DEFAULT 0, -- አሁን ያሉ ተማሪዎች ብዛት
+    current_staff INT DEFAULT 0     -- አሁን ያሉ መምህራን ብዛት
+);
+
+-- ተማሪዎችን ከክፍል ጋር የሚያገናኝ
+ALTER TABLE students ADD COLUMN IF NOT EXISTS room_id INT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending';
+
+-- መምህራንን ከክፍል ጋር የሚያገናኝ
+CREATE TABLE IF NOT EXISTS staff_assignments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_name VARCHAR(100) NOT NULL,
+    room_id INT,
+    FOREIGN KEY (room_id) REFERENCES exam_rooms(id)
+);

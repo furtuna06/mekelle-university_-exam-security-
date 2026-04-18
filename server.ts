@@ -5,8 +5,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { testMysqlConnection } from "./src/mysql.js";
 import mysqlRoutes from "./src/mysqlRoutes.js";
-
-dotenv.config();
+import { allocateRoomForStudent, allocateRoomForStaff } from "./src/services/allocationService";
 
 async function startServer() {
   const app = express();
@@ -20,6 +19,15 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", message: "Server is running" });
   });
+  app.post('/api/admin/approve-student', async (req, res) => {
+  const { studentId } = req.body;
+  try {
+    const result = await allocateRoomForStudent(studentId);
+    res.json({ message: "ተማሪው በትክክል ጸድቋል!", roomId: result.roomId });
+  } catch (error) {
+    res.status(500).json({ error: "ምደባው አልተሳካም" });
+  }
+});
 
   // MySQL health check
   app.get("/api/db-health", async (req, res) => {
