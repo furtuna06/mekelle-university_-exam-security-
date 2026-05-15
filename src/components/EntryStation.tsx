@@ -81,24 +81,37 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
       setIsProcessing(true);
       
       try {
-        const descriptor = await getFaceDescriptor(videoRef.current);
-        
+        // Always run object detection independently - don't wait for face detection
         let suspiciousPrediction: any[] = [];
         if (detectorReady) {
           try {
+            console.log('[EntryStation] Running object detection...');
             suspiciousPrediction = await detectSuspiciousObjects(videoRef.current);
+            console.log('[EntryStation] Found', suspiciousPrediction.length, 'suspicious objects:', suspiciousPrediction.map(p => `${p.class} (${(p.score * 100).toFixed(1)}%)`));
+            
+            // Send alert immediately if suspicious objects are detected
+            if (suspiciousPrediction.length > 0 && !alertCooldownRef.current) {
+              const suspiciousLabel = summarizeSuspiciousObject(suspiciousPrediction[0]);
+              const warningText = `ALERT: ${suspiciousLabel} detected at entry station.`;
+              console.log('[EntryStation] Sending alert:', warningText);
+              
+              alertCooldownRef.current = true;
+              setTimeout(() => { alertCooldownRef.current = false; }, 30000); // 30 second cooldown
+              
+              await sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
+              
+              setResult({ status: 'error', confidence: 0, warning: warningText });
+            }
           } catch (err) {
-            console.warn('Object detection failed:', err);
+            console.error('[EntryStation] Object detection error:', err);
           }
+        } else {
+          console.log('[EntryStation] Detector not ready yet');
         }
+        
+        const descriptor = await getFaceDescriptor(videoRef.current);
         const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
-        const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
-
-        if (warningText && !alertCooldownRef.current) {
-          alertCooldownRef.current = true;
-          setTimeout(() => { alertCooldownRef.current = false; }, 20000);
-          sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
-        }
+        const warningText = suspiciousLabel ? `Face detected with ${suspiciousLabel} present.` : undefined;
 
         if (!descriptor) {
           // Face detection failed
