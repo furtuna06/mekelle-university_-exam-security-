@@ -16,64 +16,81 @@ const suspiciousLabels = new Set([
 ]);
 
 let model: cocoSsd.ObjectDetection | null = null;
+let modelLoadPromise: Promise<cocoSsd.ObjectDetection> | null = null;
 let modelLoadError: Error | null = null;
 
 export async function loadObjectDetector() {
+  // If already loaded or loading, return existing promise
+  if (model) {
+    return model;
+  }
+  
+  if (modelLoadPromise) {
+    return modelLoadPromise;
+  }
+  
+  // If previously failed, throw
   if (modelLoadError) {
     throw modelLoadError;
   }
   
-  if (!model) {
+  // Create loading promise
+  modelLoadPromise = (async () => {
     try {
-      console.log('[ObjectDetector] Initializing TensorFlow...');
+      console.log('[ObjectDetector] Starting initialization...');
+      
+      // Wait for TensorFlow to be ready
+      console.log('[ObjectDetector] Waiting for TensorFlow...');
       await tf.ready();
-      console.log('[ObjectDetector] TensorFlow ready, available backends:', tf.getBackend());
+      console.log('[ObjectDetector] TensorFlow ready, backend:', tf.getBackend());
 
-      // Try to set backend with fallback
+      // Try to set optimal backend
       try {
         await tf.setBackend('webgl');
-        console.log('[ObjectDetector] Using WebGL backend');
-      } catch (webglErr) {
-        console.warn('[ObjectDetector] WebGL backend failed, trying CPU:', webglErr);
-        try {
-          await tf.setBackend('cpu');
-          console.log('[ObjectDetector] Using CPU backend');
-        } catch (cpuErr) {
-          console.warn('[ObjectDetector] CPU backend failed:', cpuErr);
-        }
+        console.log('[ObjectDetector] Set backend to WebGL');
+      } catch (err) {
+        console.warn('[ObjectDetector] WebGL failed, using default:', err);
       }
 
+      // Load model
       console.log('[ObjectDetector] Loading COCO-SSD model...');
       model = await cocoSsd.load();
-      console.log('[ObjectDetector] COCO-SSD model loaded successfully');
+      console.log('[ObjectDetector] Model loaded successfully');
+      return model;
     } catch (err) {
       modelLoadError = err instanceof Error ? err : new Error(String(err));
-      console.error('[ObjectDetector] Model loading failed:', err);
-      throw err;
+      console.error('[ObjectDetector] Initialization failed:', modelLoadError);
+      throw modelLoadError;
     }
-  }
-  return model;
+  })();
+
+  return modelLoadPromise;
 }
 
-export async function detectSuspiciousObjects(video: HTMLVideoElement) {
+export async function detectSuspiciousObjects(video: HTMLVideoElement): Promise<cocoSsd.DetectedObject[]> {
   try {
+    if (!video.videoWidth || !video.videoHeight) {
+      console.log('[ObjectDetector] Video not ready yet');
+      return [];
+    }
+
     const detector = await loadObjectDetector();
     const predictions = await detector.detect(video);
-    console.log('[ObjectDetector] Raw predictions:', predictions.length, 'objects found');
+    console.log('[ObjectDetector] Found', predictions.length, 'objects');
     
     const filtered = predictions.filter(prediction => {
       const label = prediction.class.toLowerCase();
       const isSuspicious = (suspiciousLabels.has(label) || label.includes('phone')) && prediction.score >= 0.45;
       if (isSuspicious) {
-        console.log('[ObjectDetector] Found suspicious object:', prediction.class, 'score:', (prediction.score * 100).toFixed(1) + '%');
+        console.log('[ObjectDetector] Suspicious:', prediction.class, '- score:', (prediction.score * 100).toFixed(1) + '%');
       }
       return isSuspicious;
     });
     
     return filtered;
   } catch (err) {
-    console.error('[ObjectDetector] Error during detection:', err);
-    // Don't throw - return empty array to allow face detection to continue
+    console.warn('[ObjectDetector] Detection failed:', err);
+    // Return empty array to allow face detection to continue
     return [];
   }
 }

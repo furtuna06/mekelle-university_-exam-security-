@@ -50,17 +50,9 @@ export default function Recognition() {
     }
     startVideo();
 
-    // Load detector but don't block if it fails
-    loadObjectDetector()
-      .then(() => {
-        console.log('[Recognition] Object detector initialized successfully');
-        setDetectorReady(true);
-      })
-      .catch((err) => {
-        console.warn("[Recognition] Object detector failed to initialize (will continue without detection):", err);
-        // Don't set detectorReady, but continue anyway
-        setDetectorReady(false);
-      });
+    // Initialize detector lazily on first use (not here)
+    console.log('[Recognition] Ready to detect objects on first camera frame');
+    setDetectorReady(true); // Set to true to enable detection attempts
 
    // Load students from Firestore
     getStudents()

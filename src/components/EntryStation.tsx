@@ -50,17 +50,9 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
         const data = await getStudents();
         setStudents(data);
         
-        // Load detector but don't block if it fails
-        loadObjectDetector()
-          .then(() => {
-            console.log('[EntryStation] Object detector initialized successfully');
-            setDetectorReady(true);
-          })
-          .catch((err) => {
-            console.warn("[EntryStation] Object detector failed to initialize (will continue without detection):", err);
-            // Don't set detectorReady, but continue anyway
-            setDetectorReady(false);
-          });
+        // Initialize detector lazily on first use (not here)
+        console.log('[EntryStation] Ready to detect objects on first camera frame');
+        setDetectorReady(true); // Set to true to enable detection attempts
       } catch (err) {
         console.error("Error accessing webcam or students:", err);
         setResult({ status: 'error', confidence: 0 });
