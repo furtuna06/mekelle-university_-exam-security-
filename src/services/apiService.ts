@@ -250,6 +250,18 @@ export const deleteNotification = async (id: string) => {
   return handleResponse(response);
 };
 
+export const sendCheatAlert = async (message: string, targetId: string = 'all') => {
+  await addNotification({
+    title: 'Cheating Alert',
+    message,
+    type: 'warning',
+    targetId,
+    read: false,
+    timestamp: new Date().toISOString(),
+  });
+  await logAudit('Cheating Alert', message);
+};
+
 export const logRecognitionAttempt = async (attempt: any) => {
   const payload = {
     student_id: attempt.studentId || attempt.student_id,

@@ -2,12 +2,14 @@ import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, ShieldAlert, ShieldCheck, User, Clock, AlertCircle, History } from 'lucide-react';
 import { getFaceDescriptor, computeFaceSimilarity } from '../lib/faceApi';
-import { logAttendance, logAudit, getStudents, logRecognitionAttempt } from '../services/apiService';
+import { detectSuspiciousObjects, loadObjectDetector, summarizeSuspiciousObject } from '../lib/objectDetector';
+import { logAttendance, logAudit, getStudents, logRecognitionAttempt, sendCheatAlert } from '../services/apiService';
 import { AttendanceTracker } from '../lib/attendanceTracker';
 interface RecognitionResult {
   student?: any;
   confidence: number;
   status: 'match' | 'no-match' | 'scanning';
+  warning?: string;
   timestamp: string;
 }
 
@@ -21,6 +23,8 @@ export default function Recognition() {
   const [students, setStudents] = useState<any[]>([]);
   const [lastUnknownTime, setLastUnknownTime] = useState<number>(0);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [detectorReady, setDetectorReady] = useState(false);
+  const alertCooldownRef = useRef(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -46,6 +50,10 @@ export default function Recognition() {
     }
     startVideo();
 
+    loadObjectDetector()
+      .then(() => setDetectorReady(true))
+      .catch((err) => console.error("Failed to initialize object detector:", err));
+
    // Load students from Firestore
     getStudents()
       .then(data => setStudents(data || []))
@@ -58,6 +66,15 @@ export default function Recognition() {
       setIsProcessing(true);
       const descriptor = await getFaceDescriptor(videoRef.current);
       
+      let suspiciousPrediction: any[] = [];
+      if (detectorReady) {
+        try {
+          suspiciousPrediction = await detectSuspiciousObjects(videoRef.current);
+        } catch (err) {
+          console.warn('Object detection failed:', err);
+        }
+      }
+
       if (descriptor) {
         let bestMatch = null;
         let minDistance = 1.0;
@@ -75,6 +92,8 @@ export default function Recognition() {
 
         const confidence = Math.max(0, (1 - minDistance) * 100);
         const isMatch = minDistance < 0.45 && confidence >= 60;
+        const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
+        const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
         
         // Log attempt for analytics
         await logRecognitionAttempt({
@@ -88,10 +107,17 @@ export default function Recognition() {
           student: isMatch ? bestMatch : null,
           confidence: parseFloat(confidence.toFixed(2)),
           status: isMatch ? 'match' : (confidence > 40 ? 'no-match' : 'scanning'),
+          warning: warningText,
           timestamp: new Date().toLocaleTimeString(),
         };
 
         setResult(newResult);
+
+        if (warningText && !alertCooldownRef.current) {
+          alertCooldownRef.current = true;
+          setTimeout(() => { alertCooldownRef.current = false; }, 20000);
+          sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
+        }
         
         if (isMatch || confidence > 50) {
           const nowTime = Date.now();
@@ -128,7 +154,7 @@ export default function Recognition() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [students]);
+  }, [students, detectorReady]);
 
   return (
     <div className="max-w-6xl mx-auto p-6 grid lg:grid-cols-3 gap-8">
@@ -199,6 +225,11 @@ export default function Recognition() {
                     <div className="text-lg font-bold">
                       {result.status === 'match' ? result.student.name : 'Unknown Individual'}
                     </div>
+                    {result.warning && (
+                      <p className="mt-2 text-sm opacity-90">
+                        {result.warning}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">

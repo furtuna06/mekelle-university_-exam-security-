@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, ShieldAlert, User, Scan, ArrowRight, CheckCircle2, XCircle, Building2, BadgeCheck } from 'lucide-react';
 import Logo from './Logo';
 import { getFaceDescriptor, computeFaceSimilarity } from '../lib/faceApi';
-import { getStudents, logAttendance, logAudit, logRecognitionAttempt } from '../services/apiService';
+import { detectSuspiciousObjects, loadObjectDetector, summarizeSuspiciousObject } from '../lib/objectDetector';
+import { getStudents, logAttendance, logAudit, logRecognitionAttempt, sendCheatAlert } from '../services/apiService';
 import { AttendanceTracker } from '../lib/attendanceTracker';
 import * as faceapi from 'face-api.js';
 
@@ -11,6 +12,7 @@ interface RecognitionResult {
   user?: any;
   confidence: number;
   status: 'match' | 'no-match' | 'scanning' | 'success' | 'no-face-detected' | 'error';
+  warning?: string;
 }
 
 export default function EntryStation({ onBack }: { onBack?: () => void }) {
@@ -22,6 +24,8 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [detectorReady, setDetectorReady] = useState(false);
+  const alertCooldownRef = useRef(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -45,6 +49,9 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
         }
         const data = await getStudents();
         setStudents(data);
+        loadObjectDetector()
+          .then(() => setDetectorReady(true))
+          .catch((err) => console.error("Failed to initialize object detector:", err));
       } catch (err) {
         console.error("Error accessing webcam or students:", err);
         setResult({ status: 'error', confidence: 0 });
@@ -76,6 +83,15 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
       try {
         const descriptor = await getFaceDescriptor(videoRef.current);
         
+        let suspiciousPrediction: any[] = [];
+        if (descriptor && detectorReady) {
+          try {
+            suspiciousPrediction = await detectSuspiciousObjects(videoRef.current);
+          } catch (err) {
+            console.warn('Object detection failed:', err);
+          }
+        }
+
         if (!descriptor) {
           // Face detection failed
           console.log('Face detection failed - no face detected');
@@ -111,6 +127,8 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
 
         const confidence = Math.max(0, (1 - minDistance) * 100);
         const isMatch = minDistance < 0.6 && confidence >= 50; // More lenient thresholds
+        const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
+        const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
         
         console.log(`Recognition result: distance=${minDistance.toFixed(3)}, confidence=${confidence.toFixed(1)}%, match=${isMatch}`);
         
@@ -123,8 +141,14 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
         });
 
         if (isMatch && bestMatch) {
-          setResult({ user: bestMatch, confidence: parseFloat(confidence.toFixed(2)), status: 'success' });
+          setResult({ user: bestMatch, confidence: parseFloat(confidence.toFixed(2)), status: 'success', warning: warningText });
           
+          if (warningText && !alertCooldownRef.current) {
+            alertCooldownRef.current = true;
+            setTimeout(() => { alertCooldownRef.current = false; }, 20000);
+            sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
+          }
+
           // Check if student has recent attendance using shared tracker
           if (AttendanceTracker.logAttendance(bestMatch.id, 'entry_station')) {
             await logAttendance({
@@ -314,6 +338,11 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
                 ? 'Face not recognized. Please ensure you are registered or try again.'
                 : 'Align your face within the frame for biometric recognition.'}
             </p>
+            {result.warning && (
+              <div className="rounded-3xl bg-amber-500/10 border border-amber-500/20 p-4 text-amber-100">
+                <span className="font-bold">Alert:</span> {result.warning}
+              </div>
+            )}
           </div>
 
           <AnimatePresence mode="wait">
