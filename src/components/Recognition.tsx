@@ -74,81 +74,89 @@ export default function Recognition() {
           console.warn('Object detection failed:', err);
         }
       }
+      const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
+      const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
 
-      if (descriptor) {
-        let bestMatch = null;
-        let minDistance = 1.0;
+      if (warningText && !alertCooldownRef.current) {
+        alertCooldownRef.current = true;
+        setTimeout(() => { alertCooldownRef.current = false; }, 20000);
+        sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
+      }
 
-        for (const student of students) {
-          for (const storedDescriptorArray of (student.descriptors as number[][])) {
-            const storedDescriptor = new Float32Array(storedDescriptorArray);
-            const distance = computeFaceSimilarity(descriptor, storedDescriptor);
-            if (distance < minDistance) {
-              minDistance = distance;
-              bestMatch = student;
-            }
-          }
-        }
-
-        const confidence = Math.max(0, (1 - minDistance) * 100);
-        const isMatch = minDistance < 0.45 && confidence >= 60;
-        const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
-        const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
-        
-        // Log attempt for analytics
-        await logRecognitionAttempt({
-          studentId: isMatch ? bestMatch.id : null,
-          confidence: parseFloat(confidence.toFixed(2)),
-          status: isMatch ? 'match' : 'no-match',
-          distance: minDistance
-        });
-
-        const newResult: RecognitionResult = {
-          student: isMatch ? bestMatch : null,
-          confidence: parseFloat(confidence.toFixed(2)),
-          status: isMatch ? 'match' : (confidence > 40 ? 'no-match' : 'scanning'),
+      if (!descriptor) {
+        setResult({
+          student: null,
+          confidence: 0,
+          status: warningText ? 'no-match' : 'scanning',
           warning: warningText,
           timestamp: new Date().toLocaleTimeString(),
-        };
+        });
+        setIsProcessing(false);
+        return;
+      }
 
-        setResult(newResult);
+      let bestMatch = null;
+      let minDistance = 1.0;
 
-        if (warningText && !alertCooldownRef.current) {
-          alertCooldownRef.current = true;
-          setTimeout(() => { alertCooldownRef.current = false; }, 20000);
-          sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
-        }
-        
-        if (isMatch || confidence > 50) {
-          const nowTime = Date.now();
-
-          if (isMatch) {
-            // Check if this student should be logged using shared tracker
-            if (AttendanceTracker.logAttendance(bestMatch.id, 'security_monitor')) {
-              setLogs(prev => [newResult, ...prev].slice(0, 10));
-              
-              const newAttendance = {
-                id: bestMatch.id,
-                name: bestMatch.name,
-                role: bestMatch.role || 'student',
-                department: bestMatch.department || 'N/A',
-                confidence: parseFloat(confidence.toFixed(2))
-              };
-              
-              await logAttendance(newAttendance);
-              await logAudit('Security Recognition', `User recognized via Monitor: ${bestMatch.name} (${bestMatch.id})`);
-            }
-          } else {
-            // Unknown person - 30 second cooldown for logging
-            if (nowTime - lastUnknownTime > 30000) {
-              setLogs(prev => [newResult, ...prev].slice(0, 10));
-              await logAudit('Security Alert', 'Unknown individual detected at entry');
-              setLastUnknownTime(nowTime);
-            }
+      for (const student of students) {
+        for (const storedDescriptorArray of (student.descriptors as number[][])) {
+          const storedDescriptor = new Float32Array(storedDescriptorArray);
+          const distance = computeFaceSimilarity(descriptor, storedDescriptor);
+          if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = student;
           }
         }
-      } else {
-        setResult({ status: 'scanning', confidence: 0, timestamp: '' });
+      }
+
+      const confidence = Math.max(0, (1 - minDistance) * 100);
+      const isMatch = minDistance < 0.45 && confidence >= 60;
+      
+      // Log attempt for analytics
+      await logRecognitionAttempt({
+        studentId: isMatch ? bestMatch.id : null,
+        confidence: parseFloat(confidence.toFixed(2)),
+        status: isMatch ? 'match' : 'no-match',
+        distance: minDistance
+      });
+
+      const newResult: RecognitionResult = {
+        student: isMatch ? bestMatch : null,
+        confidence: parseFloat(confidence.toFixed(2)),
+        status: isMatch ? 'match' : (confidence > 40 ? 'no-match' : 'scanning'),
+        warning: warningText,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+
+      setResult(newResult);
+
+      if (isMatch || confidence > 50) {
+        const nowTime = Date.now();
+
+        if (isMatch) {
+          // Check if this student should be logged using shared tracker
+          if (AttendanceTracker.logAttendance(bestMatch.id, 'security_monitor')) {
+            setLogs(prev => [newResult, ...prev].slice(0, 10));
+            
+            const newAttendance = {
+              id: bestMatch.id,
+              name: bestMatch.name,
+              role: bestMatch.role || 'student',
+              department: bestMatch.department || 'N/A',
+              confidence: parseFloat(confidence.toFixed(2))
+            };
+            
+            await logAttendance(newAttendance);
+            await logAudit('Security Recognition', `User recognized via Monitor: ${bestMatch.name} (${bestMatch.id})`);
+          }
+        } else {
+          // Unknown person - 30 second cooldown for logging
+          if (nowTime - lastUnknownTime > 30000) {
+            setLogs(prev => [newResult, ...prev].slice(0, 10));
+            await logAudit('Security Alert', 'Unknown individual detected at entry');
+            setLastUnknownTime(nowTime);
+          }
+        }
       }
       setIsProcessing(false);
     }, 1500);

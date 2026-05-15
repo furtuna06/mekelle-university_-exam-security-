@@ -1,4 +1,4 @@
-import '@tensorflow/tfjs';
+import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 
 const suspiciousLabels = new Set([
@@ -17,6 +17,17 @@ let model: cocoSsd.ObjectDetection | null = null;
 
 export async function loadObjectDetector() {
   if (!model) {
+    await tf.ready();
+
+    const availableBackends = tf.engine().registry;
+    if (Object.prototype.hasOwnProperty.call(availableBackends, 'webgl')) {
+      try {
+        await tf.setBackend('webgl');
+      } catch {
+        // fallback to default backend
+      }
+    }
+
     model = await cocoSsd.load();
   }
   return model;

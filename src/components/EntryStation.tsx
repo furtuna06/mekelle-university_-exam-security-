@@ -84,18 +84,26 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
         const descriptor = await getFaceDescriptor(videoRef.current);
         
         let suspiciousPrediction: any[] = [];
-        if (descriptor && detectorReady) {
+        if (detectorReady) {
           try {
             suspiciousPrediction = await detectSuspiciousObjects(videoRef.current);
           } catch (err) {
             console.warn('Object detection failed:', err);
           }
         }
+        const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
+        const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
+
+        if (warningText && !alertCooldownRef.current) {
+          alertCooldownRef.current = true;
+          setTimeout(() => { alertCooldownRef.current = false; }, 20000);
+          sendCheatAlert(warningText).catch(err => console.error('Failed to send cheat alert:', err));
+        }
 
         if (!descriptor) {
           // Face detection failed
           console.log('Face detection failed - no face detected');
-          setResult({ status: 'no-face-detected', confidence: 0 });
+          setResult({ status: 'no-face-detected', confidence: 0, warning: warningText });
           setTimeout(() => {
             setResult({ status: 'scanning', confidence: 0 });
           }, 2000);
@@ -127,8 +135,6 @@ export default function EntryStation({ onBack }: { onBack?: () => void }) {
 
         const confidence = Math.max(0, (1 - minDistance) * 100);
         const isMatch = minDistance < 0.6 && confidence >= 50; // More lenient thresholds
-        const suspiciousLabel = suspiciousPrediction.length ? summarizeSuspiciousObject(suspiciousPrediction[0]) : null;
-        const warningText = suspiciousLabel ? `Face found and registered, but ${suspiciousLabel} was detected.` : undefined;
         
         console.log(`Recognition result: distance=${minDistance.toFixed(3)}, confidence=${confidence.toFixed(1)}%, match=${isMatch}`);
         
